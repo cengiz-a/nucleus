@@ -11,27 +11,28 @@
 #include "methods.h"
 
 
-
+// parseMessage fängt die Eingabe ab und teilt es nach Leerzeichen auf.
+// Die einzelnen Wörter werden in einem Array gespeichert.
 int parseMessage(char* message, char parsed[MAX_CMD][KEY_LENGTH]) {
-  int c_index = 0;
-  int k_index = 0;
+  int word_index = 0;
+  int char_index = 0;
 
   while(*message) {
     // Check for space
     if(*message == 32) {
       // Move to next cmd
-      c_index++;
+      word_index++;
       // Move to next character
       message++;
       // Start from start again
-      k_index = 0;
+      char_index = 0;
     } else if(*message == 10 || *message == 13) {
       // Ignore carriage return and newline
-      k_index++;
+      char_index++;
       message++;
     } else {
       // Copy character and move to next
-      parsed[c_index][k_index++] = *(message++);
+      parsed[word_index][char_index++] = *(message++);
     }
   }
 
@@ -41,10 +42,10 @@ int parseMessage(char* message, char parsed[MAX_CMD][KEY_LENGTH]) {
 }
 
 int main() {
+  // anlegen eines shared_memory
   int id = shmget(IPC_PRIVATE, sizeof(struct KeyValue) * STORE_SIZE, IPC_CREAT|0600);
-  struct shmid_ds status;
 
-  // Attach
+  // Attac
   struct KeyValue* pointer_to_shared_memory = shmat(id, 0, 0);
   memset(pointer_to_shared_memory, 0, sizeof(pointer_to_shared_memory));
 
