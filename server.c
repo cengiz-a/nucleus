@@ -10,11 +10,7 @@
 
 #include "methods.h"
 
-#define PORT 4711
-#define BUFFER_LENGTH 256
-#define STORE_SIZE 1024
-#define KEY_LENGTH 64
-#define MAX_CMD 3
+
 
 int parseMessage(char* message, char parsed[MAX_CMD][KEY_LENGTH]) {
   int c_index = 0;
@@ -43,20 +39,9 @@ int main() {
   int id = shmget(IPC_PRIVATE, sizeof(struct KeyValue) * STORE_SIZE, IPC_CREAT|0600);
   struct shmid_ds status;
 
-  shmctl(id, IPC_STAT, &status);
-  printf("Last attach: %d\n", status.shm_atime);
-
   // Attach
   struct KeyValue* pointer_to_shared_memory = shmat(id, 0, 0);
   memset(pointer_to_shared_memory, 0, sizeof(pointer_to_shared_memory));
-  strcpy(pointer_to_shared_memory[0].key, "1337");
-  printf("Pointer: %p\n", pointer_to_shared_memory);
-
-  shmctl(id, IPC_STAT, &status);
-  printf("Last attach: %d\n", status.shm_atime);
-
-  int pid = fork();
-  printf("shared memory: %s\n", pointer_to_shared_memory[0].key);
 
   char parsed[MAX_CMD][KEY_LENGTH];
   memset(parsed, 0, sizeof(parsed));
@@ -112,6 +97,11 @@ int main() {
     if(!strcmp(parsed[0], "GET")) {
       // get value by key and return it
       printf("GET\n");
+      char returnValue[KEY_LENGTH];
+
+      get(parsed[1], returnValue, pointer_to_shared_memory);
+
+      printf("Found: %s\n", returnValue);
     } else if(!strcmp(parsed[0], "PUT")) {
       // set value for key and return old value if it was set
       put(parsed[1], parsed[2], pointer_to_shared_memory);
@@ -122,5 +112,8 @@ int main() {
     } else {
       shutdown(clientSocket, 0);
     }
+
+    memset(buffer, 0, sizeof(buffer));
+    memset(parsed, 0, sizeof(parsed));
   }
 }
