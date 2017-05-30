@@ -3,7 +3,14 @@
 #include <string.h>
 
 int put(char* key, char* value, struct KeyValue* res) {
-	strcpy(res[0].key, key);
-	strcpy(res[0].value, value);
-	return 0;
+  int i;
+	for(i = 0;i < STORE_SIZE;i++) {
+  	if(res[i].key[0] == '\0') {
+      strcpy(res[i].key, key);
+      strcpy(res[i].value, value);
+      return 1;
+    }
+	}
+
+	return -1;
 }

@@ -25,11 +25,16 @@ int parseMessage(char* message, char parsed[MAX_CMD][KEY_LENGTH]) {
       message++;
       // Start from start again
       k_index = 0;
+    } else if(*message == 10 || *message == 13) {
+      // Ignore carriage return and newline
+      k_index++;
+      message++;
     } else {
       // Copy character and move to next
       parsed[c_index][k_index++] = *(message++);
     }
   }
+
   // TODO: Validate message and return errorcode
   // TODO: allow spaces inside value -> "
   return 0;
@@ -73,47 +78,49 @@ int main() {
   }
 
   int len = sizeof(client);
-  int clientSocket = accept(serverSocket, (struct sockaddr*)&client, &len);
+  int clientSocket;
 
-  if(clientSocket < 0) {
-    perror("Cannot accept socket");
-    exit(EXIT_FAILURE);
-  }
+  while(clientSocket = accept(serverSocket, (struct sockaddr*)&client, &len)) {
+      printf("Client connected, %d\n", clientSocket);
+      int pid = fork();
+      if(pid == 0) {
+        if(clientSocket < 0) {
+          perror("Cannot accept socket");
+          exit(EXIT_FAILURE);
+        }
 
-  printf("Client connected\n");
+        char buffer[BUFFER_LENGTH];
+        memset(buffer, 0, sizeof(buffer));
 
-  char buffer[BUFFER_LENGTH];
-  memset(buffer, 0, sizeof(buffer));
+        while(recvLen = recv(clientSocket, buffer, BUFFER_LENGTH, 0)) {
+          int ret = parseMessage(buffer, parsed);
 
-  while(recv(clientSocket, buffer, BUFFER_LENGTH, 0)) {
-    int ret = parseMessage(buffer, parsed);
+          if(ret < 0) {
+            printf("Error while parsing message\n");
+          }
 
-    if(ret < 0) {
-      printf("Error while parsing message\n");
-    }
+          if(!strcmp(parsed[0], "GET")) {
+            // get value by key and return it
+            char returnValue[KEY_LENGTH];
+            memset(returnValue, 0, KEY_LENGTH);
+            get(parsed[1], returnValue, pointer_to_shared_memory);
+            send(clientSocket, returnValue, KEY_LENGTH, 0);
+            printf("GET %s %s\n", parsed[1], returnValue);
+          } else if(!strcmp(parsed[0], "PUT")) {
+            // set value for key and return old value if it was set
+            put(parsed[1], parsed[2], pointer_to_shared_memory);
+            printf("PUT %s %s\n", pointer_to_shared_memory[0].key, pointer_to_shared_memory[0].value);
+          } else if(!strcmp(parsed[0], "DEL")) {
+            // delete key
+            del(parsed[1], pointer_to_shared_memory);
+            printf("DEL %s\n", parsed[1]);
+          } else {
+            shutdown(clientSocket, 0);
+          }
 
-    printf("CMD: %s, KEY: %s, VAL: %s\n", parsed[0], parsed[1], parsed[2]);
-
-    if(!strcmp(parsed[0], "GET")) {
-      // get value by key and return it
-      printf("GET\n");
-      char returnValue[KEY_LENGTH];
-
-      get(parsed[1], returnValue, pointer_to_shared_memory);
-
-      printf("Found: %s\n", returnValue);
-    } else if(!strcmp(parsed[0], "PUT")) {
-      // set value for key and return old value if it was set
-      put(parsed[1], parsed[2], pointer_to_shared_memory);
-      printf("PUT %s %s", pointer_to_shared_memory[0].key, pointer_to_shared_memory[0].value);
-    } else if(!strcmp(parsed[0], "DEL")) {
-      // delete key
-      printf("DEL\n");
-    } else {
-      shutdown(clientSocket, 0);
-    }
-
-    memset(buffer, 0, sizeof(buffer));
-    memset(parsed, 0, sizeof(parsed));
+          memset(buffer, 0, sizeof(buffer));
+          memset(parsed, 0, sizeof(parsed));
+        }
+      }
   }
 }

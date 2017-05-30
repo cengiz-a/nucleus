@@ -1,4 +1,6 @@
 #include <stdio.h>
+#include <string.h>
+
 #include "methods.h"
 
 int get(char* key, char* value, struct KeyValue* res) {
