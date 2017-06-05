@@ -7,6 +7,7 @@
 #include <inttypes.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
+#include <unistd.h>
 
 #include "methods.h"
 
@@ -48,7 +49,11 @@ int main() {
   // Attac
   struct KeyValue* pointer_to_shared_memory = shmat(id, 0, 0);
   memset(pointer_to_shared_memory, 0, sizeof(pointer_to_shared_memory));
-
+  if(pointer_to_shared_memory < 0) {
+      printf("Could not attach shared memory.\n");
+      return -1;
+  }
+    
   char parsed[MAX_CMD][KEY_LENGTH];
   memset(parsed, 0, sizeof(parsed));
 
@@ -93,6 +98,9 @@ int main() {
         char buffer[BUFFER_LENGTH];
         memset(buffer, 0, sizeof(buffer));
 
+        
+        int recvLen =0;
+              
         while(recvLen = recv(clientSocket, buffer, BUFFER_LENGTH, 0)) {
           int ret = parseMessage(buffer, parsed);
 
@@ -104,18 +112,34 @@ int main() {
             // get value by key and return it
             char returnValue[KEY_LENGTH];
             memset(returnValue, 0, KEY_LENGTH);
-            get(parsed[1], returnValue, pointer_to_shared_memory);
-            send(clientSocket, returnValue, KEY_LENGTH, 0);
+            int ret = get(parsed[1], returnValue, pointer_to_shared_memory);
+            if(ret < 0) {
+                char* response = "Wert nicht gefunden!\n";
+                send(clientSocket, response, 20, 0);
+            } else {
+                send(clientSocket, returnValue, KEY_LENGTH, 0);
+            }
+              
             printf("GET %s %s\n", parsed[1], returnValue);
           } else if(!strcmp(parsed[0], "PUT")) {
             // set value for key and return old value if it was set
-            put(parsed[1], parsed[2], pointer_to_shared_memory);
+            char retVal[KEY_LENGTH];
+            int ret = put(parsed[1], parsed[2], retVal, pointer_to_shared_memory);
             printf("PUT %s %s\n", pointer_to_shared_memory[0].key, pointer_to_shared_memory[0].value);
+              
+            send(clientSocket, retVal, KEY_LENGTH, 0);
           } else if(!strcmp(parsed[0], "DEL")) {
             // delete key
-            del(parsed[1], pointer_to_shared_memory);
+            char* retVal[KEY_LENGTH];
+            int ret = del(parsed[1], retVal, pointer_to_shared_memory);
+            if(ret < 0) {
+                char* response = "Wert nicht gefunden!\n";
+                send(clientSocket, response, 20, 0);
+            } else {
+                send(clientSocket, retVal, KEY_LENGTH, 0);
+            }
             printf("DEL %s\n", parsed[1]);
-          } else {
+          } else if(!strcmp(parsed[0], "exit")) {
             shutdown(clientSocket, 0);
           }
 
@@ -124,4 +148,6 @@ int main() {
         }
       }
   }
+    
+    shmdt(pointer_to_shared_memory);
 }
