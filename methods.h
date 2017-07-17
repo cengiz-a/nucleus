@@ -17,6 +17,5 @@ struct KeyValue {
 int put(char* key, char* value, char* retVal, struct KeyValue* res);
 int get(char* key, char* value, struct KeyValue* res);
 int del(char* key, char* retVal, struct KeyValue* res);
-int writeLine(char* line, int socket);
 
 #endif

@@ -45,15 +45,16 @@ int parseMessage(char* message, char parsed[MAX_CMD][KEY_LENGTH]) {
 
 int main() {
   // anlegen eines shared_memory
-  int id = shmget(IPC_PRIVATE, sizeof(struct KeyValue) * STORE_SIZE, IPC_CREAT|0600);
+  int *reader = NULL;
+  int id = shmget(IPC_PRIVATE, sizeof(struct KeyValue) * STORE_SIZE + sizeof(int), IPC_CREAT|0600);
   int sem_id = semget (IPC_PRIVATE, 1, IPC_CREAT);
+  //int reader = 0;
   int sem_id_read = semget(IPC_PRIVATE, 1, IPC_CREAT);
-  int read_count = 0;
-
   struct sembuf semaphore_lock[1]   = { 0, -1, SEM_UNDO };
   struct sembuf semaphore_unlock[1] = { 0, 1,  SEM_UNDO };
 
   int valone = 1;
+
   if (sem_id < 0) {
       umask(0);
       sem_id = semget (IPC_PRIVATE, 1, IPC_CREAT | IPC_EXCL | 0666);
@@ -81,6 +82,11 @@ int main() {
 
   // Attach
   struct KeyValue* pointer_to_shared_memory = shmat(id, 0, 0);
+  reader = (int*) (pointer_to_shared_memory + STORE_SIZE);
+  printf("Address of KeyValue-Store: %d \n", pointer_to_shared_memory);
+  printf("Sizeof KeyValue: %d \n", sizeof(struct KeyValue));
+  printf("Store-Size: %d \n", STORE_SIZE);
+  printf("Address of reader: %d \n", reader);
   memset(pointer_to_shared_memory, 0, sizeof(pointer_to_shared_memory));
   if(pointer_to_shared_memory < 0) {
       printf("Could not attach shared memory.\n");
@@ -147,83 +153,70 @@ int main() {
           }
 
           if(!strcmp(parsed[0], "GET")) {
-            // get value by key and return it
-            char retVal[KEY_LENGTH];
-            memset(retVal, 0, KEY_LENGTH);
-	    
-	    printf("GET: Require Mutex\n");
-	    // Read Mutex lock
-	    semop(sem_id_read, &semaphore_lock[0], 1);
-	    
-	    // Increment read counter
-	    read_count++;
-	    
-	    // First read thread locks write semaphore
-	    if(read_count == 1) { // Lock write
-		printf("GET: Require SemDB\n"); 
-              semop(sem_id, &semaphore_lock[0], 1);
-	  	    }
-	    // Read mutex unlock 
-	    printf("GET: Release MUTEX\n");
-	    semop(sem_id_read, &semaphore_unlock[0], 1);
+              // get value by key and return it
+              char retVal[KEY_LENGTH];
+              memset(retVal, 0, KEY_LENGTH);
+  	          semop(sem_id_read, &semaphore_lock[0], 1);
+  	    
+  	          (*reader)++;
+  	    
+  	          if(*reader == 1) {
+                semop(sem_id, &semaphore_lock[0], 1);
+	  	        }
 
-	    //sleep(3);
+        	    semop(sem_id_read, &semaphore_unlock[0], 1);
 
-            int ret = get(parsed[1], retVal, pointer_to_shared_memory);
-            
-	    // Read mutex lock
-	    printf("GET: Require Mutex\n");
-	    semop(sem_id_read, &semaphore_lock[0], 1);
-	    
-	    // Decrement read counter
-	    read_count--;
-	    
-	    // Last read thread unlocks write semaphore
-	    if(read_count == 0) {
-	      printf("GET: Release SemDB\n");
-              semop(sem_id, &semaphore_unlock[0], 1 );
-	    }
-	    printf("GET: Release Mutex\n");
-	    // Read mutex unlock
-	    semop(sem_id_read, &semaphore_unlock[0], 1);
-	    
-	    if(ret < 0) {
-              send(clientSocket, "Wert nicht gefunden!\n", 21, 0);
-            } else {
-              send(clientSocket, retVal, KEY_LENGTH, 0);
-            }
+              int ret = get(parsed[1], retVal, pointer_to_shared_memory);
+              
+        	    semop(sem_id_read, &semaphore_lock[0], 1);
+        	    
+        	    // Decrement read counter
+        	    (*reader)--;
+        	    
+        	    // Last read thread unlocks write semaphore
+        	    if(*reader == 0) {
+                      semop(sem_id, &semaphore_unlock[0], 1 );
+        	    }
 
-            printf("GET %s %s\n", parsed[1], retVal);
+        	    
+  	    
+  	          if(ret < 0) {
+                send(clientSocket, "Wert nicht gefunden!\n", 21, 0);
+              } else {
+                send(clientSocket, retVal, KEY_LENGTH, 0);
+              }
+
+              printf("GET %s %s\n", parsed[1], retVal);
+              fflush(stdout);
+              sleep(5);
+              semop(sem_id_read, &semaphore_unlock[0], 1);
           } else if(!strcmp(parsed[0], "PUT")) {
-            // set value for key and return old value if it was set
-            char retVal[KEY_LENGTH];
-            memset(retVal, 0, KEY_LENGTH);
-            /* Ressource sperren */
-	    printf("Require SemDB\n");
-            semop(sem_id, &semaphore_lock[0], 1);
-            
-	    int ret = put(parsed[1], parsed[2], retVal, pointer_to_shared_memory);
-            /* Ressource freigeben */
-	    printf("Release SemDB\n");
-            semop(sem_id, &semaphore_unlock[0], 1);
-            send(clientSocket, retVal, KEY_LENGTH, 0);
-          } else if(!strcmp(parsed[0], "DEL")) {
-            // delete key
-            char retVal[KEY_LENGTH];
-            memset(retVal, 0, KEY_LENGTH);
-            /* Ressource sperren */
-            semop(sem_id, &semaphore_lock[0], 1);
-            int ret = del(parsed[1], retVal, pointer_to_shared_memory);
-            /* Ressource freigeben */
-            semop(sem_id, &semaphore_unlock[0], 1 );
-            if(ret < 0) {
-              send(clientSocket, "Wert nicht gefunden!\n", 21, 0);
-            } else {
-              send(clientSocket, retVal, KEY_LENGTH, 0);
-            }
-            printf("DEL %s\n", parsed[1]);
-          } else if(!strcmp(parsed[0], "exit")) {
-            shutdown(clientSocket, 0);
+                // set value for key and return old value if it was set
+                char retVal[KEY_LENGTH];
+                memset(retVal, 0, KEY_LENGTH);
+                /* Ressource sperren */
+                semop(sem_id, &semaphore_lock[0], 1);
+    	          int ret = put(parsed[1], parsed[2], retVal, pointer_to_shared_memory);
+                /* Ressource freigeben */
+                semop(sem_id, &semaphore_unlock[0], 1);
+                send(clientSocket, retVal, KEY_LENGTH, 0);
+            } else if(!strcmp(parsed[0], "DEL")) {
+                // delete key
+                char retVal[KEY_LENGTH];
+                memset(retVal, 0, KEY_LENGTH);
+                /* Ressource sperren */
+                semop(sem_id, &semaphore_lock[0], 1);
+                int ret = del(parsed[1], retVal, pointer_to_shared_memory);
+                /* Ressource freigeben */
+                semop(sem_id, &semaphore_unlock[0], 1 );
+                if(ret < 0) {
+                  send(clientSocket, "Wert nicht gefunden!\n", 21, 0);
+                } else {
+                  send(clientSocket, retVal, KEY_LENGTH, 0);
+                }
+                printf("DEL %s\n", parsed[1]);
+            } else if(!strcmp(parsed[0], "exit")) {
+              shutdown(clientSocket, 0);
           }
 
           memset(buffer, 0, sizeof(buffer));
