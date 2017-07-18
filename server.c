@@ -9,9 +9,35 @@
 #include <sys/shm.h>
 #include <unistd.h>
 #include <sys/sem.h>
+#include<signal.h>
 
 #include "methods.h"
 
+struct KeyValue* pointer_to_shared_memory;
+int sem_id;
+int sem_id_read;
+
+void sig_handler(int signo)
+{
+  if (signo == SIGINT) {
+    printf("received SIGINT\n");
+  }
+
+  FILE *f = fopen("keyvalue_storage", "w");
+  if (f == NULL)
+  {
+      printf("Error opening file!\n");
+      exit(1);
+  }
+
+  fwrite(pointer_to_shared_memory, sizeof(struct KeyValue), STORE_SIZE, f);
+  fclose(f);
+  // cleanup
+  shmdt(pointer_to_shared_memory);
+  semctl(sem_id, 1, IPC_RMID);
+  semctl(sem_id_read, 1, IPC_RMID);
+  exit(0);
+}
 
 // parseMessage fängt die Eingabe ab und teilt es nach Leerzeichen auf.
 // Die einzelnen Wörter werden in einem Array gespeichert.
@@ -44,12 +70,15 @@ int parseMessage(char* message, char parsed[MAX_CMD][KEY_LENGTH]) {
 }
 
 int main() {
+  if (signal(SIGINT, sig_handler) == SIG_ERR) {
+    printf("\ncan't catch SIGINT\n");
+  }
   // anlegen eines shared_memory
   int *reader = NULL;
   int id = shmget(IPC_PRIVATE, sizeof(struct KeyValue) * STORE_SIZE + sizeof(int), IPC_CREAT|0600);
-  int sem_id = semget (IPC_PRIVATE, 1, IPC_CREAT);
+  sem_id = semget (IPC_PRIVATE, 1, IPC_CREAT);
   //int reader = 0;
-  int sem_id_read = semget(IPC_PRIVATE, 1, IPC_CREAT);
+  sem_id_read = semget(IPC_PRIVATE, 1, IPC_CREAT);
   struct sembuf semaphore_lock[1]   = { 0, -1, SEM_UNDO };
   struct sembuf semaphore_unlock[1] = { 0, 1,  SEM_UNDO };
 
@@ -68,12 +97,12 @@ int main() {
          return -1;
    }
 
- 
+
   if(sem_id_read < 0) {
     sem_id_read = semget(IPC_PRIVATE, 1, IPC_CREAT | IPC_EXCL | 0666);
     if(sem_id_read < 0) {
     	printf("Fehler beim Anlegen des read Semaphores...\n");
-	return -1;
+	    return -1;
     }
     printf("(angelegt) Semaphor-Read-ID: %d\n", sem_id_read);
     if(semctl(sem_id_read, 0, SETALL, &valone) == -1)
@@ -81,13 +110,24 @@ int main() {
   }
 
   // Attach
-  struct KeyValue* pointer_to_shared_memory = shmat(id, 0, 0);
-  reader = (int*) (pointer_to_shared_memory + STORE_SIZE);
-  printf("Address of KeyValue-Store: %d \n", pointer_to_shared_memory);
-  printf("Sizeof KeyValue: %d \n", sizeof(struct KeyValue));
-  printf("Store-Size: %d \n", STORE_SIZE);
-  printf("Address of reader: %d \n", reader);
+  pointer_to_shared_memory = shmat(id, 0, 0);
   memset(pointer_to_shared_memory, 0, sizeof(pointer_to_shared_memory));
+
+  FILE *f = fopen("keyvalue_storage", "r+b");
+  if (f == NULL)
+  {
+      printf("Error opening file!\n");
+      exit(1);
+  }
+  int re = fread(pointer_to_shared_memory, sizeof(struct KeyValue), STORE_SIZE, f);
+  fclose(f);
+
+  reader = (int*) (pointer_to_shared_memory + STORE_SIZE);
+  printf("Address of KeyValue-Store: %p \n", pointer_to_shared_memory);
+  printf("Sizeof KeyValue: %d \n", (int)sizeof(struct KeyValue));
+  printf("Store-Size: %d \n", STORE_SIZE);
+  printf("Address of reader: %p \n", reader);
+
   if(pointer_to_shared_memory < 0) {
       printf("Could not attach shared memory.\n");
       return -1;
@@ -157,9 +197,9 @@ int main() {
               char retVal[KEY_LENGTH];
               memset(retVal, 0, KEY_LENGTH);
   	          semop(sem_id_read, &semaphore_lock[0], 1);
-  	    
+
   	          (*reader)++;
-  	    
+
   	          if(*reader == 1) {
                 semop(sem_id, &semaphore_lock[0], 1);
 	  	        }
@@ -167,19 +207,19 @@ int main() {
         	    semop(sem_id_read, &semaphore_unlock[0], 1);
 
               int ret = get(parsed[1], retVal, pointer_to_shared_memory);
-              
+
         	    semop(sem_id_read, &semaphore_lock[0], 1);
-        	    
+
         	    // Decrement read counter
         	    (*reader)--;
-        	    
+
         	    // Last read thread unlocks write semaphore
         	    if(*reader == 0) {
                       semop(sem_id, &semaphore_unlock[0], 1 );
         	    }
 
-        	    
-  	    
+
+
   	          if(ret < 0) {
                 send(clientSocket, "Wert nicht gefunden!\n", 21, 0);
               } else {
@@ -224,6 +264,4 @@ int main() {
         }
       }
   }
-
-  shmdt(pointer_to_shared_memory);
 }
