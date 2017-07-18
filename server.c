@@ -186,6 +186,7 @@ int main() {
         int recvLen = 0;
 
         while(recvLen = recv(clientSocket, buffer, BUFFER_LENGTH, 0)) {
+          printf("RECIEVED: %s\n", buffer);
           int ret = parseMessage(buffer, parsed);
 
           if(ret < 0) {
@@ -221,7 +222,7 @@ int main() {
 
 
   	          if(ret < 0) {
-                send(clientSocket, "Wert nicht gefunden!\n", 21, 0);
+                send(clientSocket, "Wert nicht gefunden!", 20, 0);
               } else {
                 send(clientSocket, retVal, KEY_LENGTH, 0);
               }
@@ -250,7 +251,7 @@ int main() {
                 /* Ressource freigeben */
                 semop(sem_id, &semaphore_unlock[0], 1 );
                 if(ret < 0) {
-                  send(clientSocket, "Wert nicht gefunden!\n", 21, 0);
+                  send(clientSocket, "Wert nicht gefunden!", 20, 0);
                 } else {
                   send(clientSocket, retVal, KEY_LENGTH, 0);
                 }
